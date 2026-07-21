@@ -1,0 +1,23 @@
+# Secrets — never commit. Keys live only here, locally.
+.env
+.env.*
+!.env.example
+
+# Virtual environment — rebuildable from requirements.txt, and huge.
+venv/
+.venv/
+
+# Python bytecode caches
+__pycache__/
+*.py[cod]
+
+# Test / tooling caches
+.pytest_cache/
+.ruff_cache/
+
+# macOS Finder metadata
+.DS_Store
+
+# Editor settings
+.vscode/
+.idea/
