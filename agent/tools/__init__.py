@@ -23,4 +23,8 @@ def dispatch(name, args):
         return f"Error running {name}: {exc}"
 
 from agent.tools import calculator
+from agent.tools import files
+from agent.tools import web_search
+
+
 
