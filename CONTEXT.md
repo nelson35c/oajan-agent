@@ -97,10 +97,22 @@ Milestones (see ROADMAP.md for the table). Spine = M1–M4.
   message is appended *before* the `tool_calls` branch (the API requires it to
   precede `role: "tool"` results); tool errors return as observation strings
   rather than raising; `TOOLS` dict does name→callable dispatch.
-- **M2 — Tool registry** ← **CURRENTLY BUILDING.** Split the flat file into the
-  `agent/` package, replace the two parallel lists (`TOOLS` / `TOOL_SCHEMAS`)
-  with a real registry, then add `web_search` (Tavily) and file read/write so the
-  agent has to *choose*.
+- **M2 — Tool registry** ← **CURRENTLY BUILDING. Paused mid-refactor.**
+  - ✅ Package created: `main.py`, `agent/{__init__,llm,loop}.py`,
+    `agent/tools/{__init__,calculator}.py`.
+  - ✅ Registry verified working (no API calls needed):
+    `python -c "from agent import tools; print(tools.schemas())"` lists
+    `calculator`, and `tools.dispatch(...)` returns 19481. Both error paths
+    (unknown tool name, bad arguments) return strings instead of raising.
+  - ⏭ **Next, in order:** (1) run `python main.py "What is 847 times 23, then
+    subtract 1000?"` to confirm end-to-end parity with M1; (2) delete the old
+    root `agents.py` once parity holds; (3) `git add -A && git commit`;
+    (4) then add `web_search` (Tavily) and file read/write so the agent has to
+    *choose* a tool — that choice is the real M2 deliverable.
+  - ⚠ Registry gotcha, already hit once: `agent/tools/__init__.py` must define
+    `_REGISTRY = {}` at the top and keep `from agent.tools import calculator` at
+    the **bottom**. The decorator only fires on import, so an unimported tool file
+    is silently invisible to the agent.
 - M3 — Short-term memory (conversation across turns)
 - M4 — Long-term memory (RAG-backed vector recall) ← reuses the RAG project
 - M5 — Persistence (state survives restart)
