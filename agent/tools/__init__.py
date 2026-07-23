@@ -25,6 +25,7 @@ def dispatch(name, args):
 from agent.tools import calculator
 from agent.tools import files
 from agent.tools import web_search
+from agent.tools import apple
 
 
 

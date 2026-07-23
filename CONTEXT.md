@@ -97,22 +97,28 @@ Milestones (see ROADMAP.md for the table). Spine = M1–M4.
   message is appended *before* the `tool_calls` branch (the API requires it to
   precede `role: "tool"` results); tool errors return as observation strings
   rather than raising; `TOOLS` dict does name→callable dispatch.
-- **M2 — Tool registry** ← **CURRENTLY BUILDING. Paused mid-refactor.**
-  - ✅ Package created: `main.py`, `agent/{__init__,llm,loop}.py`,
-    `agent/tools/{__init__,calculator}.py`.
-  - ✅ Registry verified working (no API calls needed):
-    `python -c "from agent import tools; print(tools.schemas())"` lists
-    `calculator`, and `tools.dispatch(...)` returns 19481. Both error paths
-    (unknown tool name, bad arguments) return strings instead of raising.
-  - ⏭ **Next, in order:** (1) run `python main.py "What is 847 times 23, then
-    subtract 1000?"` to confirm end-to-end parity with M1; (2) delete the old
-    root `agents.py` once parity holds; (3) `git add -A && git commit`;
-    (4) then add `web_search` (Tavily) and file read/write so the agent has to
-    *choose* a tool — that choice is the real M2 deliverable.
-  - ⚠ Registry gotcha, already hit once: `agent/tools/__init__.py` must define
-    `_REGISTRY = {}` at the top and keep `from agent.tools import calculator` at
-    the **bottom**. The decorator only fires on import, so an unimported tool file
-    is silently invisible to the agent.
+- **M2 — Tool registry** ✅ **DONE.** Flat file split into the `agent/` package:
+  `main.py`, `agent/{__init__,llm,loop}.py`, `agent/tools/{__init__,calculator,
+  files,web_search}.py`. Registry (`agent/tools/__init__.py`) uses a `@tool(schema)`
+  decorator that stores `name → (fn, schema)` in `_REGISTRY`; `schemas()` feeds the
+  model, `dispatch(name, args)` runs `fn(**args)` and contains failures as strings.
+  Four tools registered: `calculator`, `read_file`, `write_file`, `web_search`.
+  Verified the agent *chooses* correctly — math→calculator, current-events→web_search.
+  - **Provider seam:** `agent/llm.py` holds the only Gemini-specific code
+    (`complete(messages, tools)`); swapping providers is this one file.
+  - **Registry gotcha:** `_REGISTRY = {}` at top, tool-module imports at the
+    **bottom** of `__init__.py`. The `@tool` decorator only fires on import, so an
+    unimported tool file is silently invisible.
+  - **Env-at-import gotcha:** `web_search.py` reads `TAVILY_API_KEY` at import
+    time, so it calls `load_dotenv()` itself rather than relying on `llm.py`'s call
+    (import order isn't guaranteed). Any module reading config at import must load
+    it — nudges toward a central `config.py` later.
+  - **Tool-use is prompt-driven:** the model won't use a tool just because it's
+    registered. `SYSTEM_PROMPT` in `loop.py` now injects `date.today()` and tells
+    it to prefer `web_search` over stale memory — that's what made search fire.
+  - **Open follow-ups (not blocking):** file tools have no path sandbox yet (a
+    write goes wherever the model names); trace output is raw/noisy — proper
+    `--verbose` formatting is M7.
 - M3 — Short-term memory (conversation across turns)
 - M4 — Long-term memory (RAG-backed vector recall) ← reuses the RAG project
 - M5 — Persistence (state survives restart)
