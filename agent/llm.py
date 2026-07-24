@@ -12,11 +12,18 @@ client = OpenAI(
 )
 
 def complete(messages, tools=None):
-    response = client.chat.completions.create(
-        model = MODEL,
-        messages = messages,
-        tools = tools,
-    )
-    return response.choices[0].message
+    for attempt in range(retries + 1):
+        try:
+            response = client.chat.completions.create(
+                model = MODEL,
+                messages = messages,
+                tools = tools,
+            )
+            return response.choices[0].message
+        except BadRequestError as exc:
+            if "tool_use_failed" in str(exc) and attempt < retries:
+                trace.retry(attempt + 1, exc)
+                continue
+            raise
 
  

@@ -1,7 +1,7 @@
 import json
 import uuid
 from datetime import date
-from agent import tools
+from agent import tools, trace
 from agent.llm import complete
 from agent.memory.store import save_memory, recall_memories
 from agent.memory.session_store import save_session, load_session, list_sessions
@@ -30,10 +30,10 @@ def run_turn(messages, max_steps=MAX_STEPS):
 
         for call in message.tool_calls:
             args = json.loads(call.function.arguments)
-            print(f"[{step}] → {call.function.name}({args})")
+            trace.tool_call(step, call.function.name, args)
 
             result = tools.dispatch(call.function.name, args)
-            print(f"[{step}] ← {result}")
+            trace.tool_result(step, result)
 
             messages.append({
                 "role": "tool",
@@ -67,6 +67,7 @@ def chat(resume=False):
             continue
 
         memories = recall_memories(user_input)
+        trace.memory_recall(memories)
         if memories:
             block = "Relevant memories from past conversations:\n" + "\n".join(
                 f"- {m['content']}" for m in memories
