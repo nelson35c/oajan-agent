@@ -25,5 +25,5 @@ __pycache__/
 #Oajan's workspace
 workspace/
 
-#Oajan's session
-session/
+#Oajan's session logs
+sessions/
