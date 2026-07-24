@@ -2,10 +2,33 @@ import json
 import uuid
 from datetime import date
 from agent import tools, trace
-from agent.llm import complete
+from agent.llm import complete, MODEL
 from agent.memory.store import save_memory, recall_memories
 from agent.memory.session_store import save_session, load_session, list_sessions
 from agent.skills import list_skills
+from rich.console import Console
+from rich.markdown import Markdown
+from rich.panel import Panel
+from rich.text import Text
+from rich.console import Group
+
+OAJAN_LOGO = r"""
+ ██████╗  █████╗      ██╗ █████╗ ███╗   ██╗
+██╔═══██╗██╔══██╗     ██║██╔══██╗████╗  ██║
+██║   ██║███████║     ██║███████║██╔██╗ ██║
+██║   ██║██╔══██║██   ██║██╔══██║██║╚██╗██║
+╚██████╔╝██║  ██║╚█████╔╝██║  ██║██║ ╚████║
+ ╚═════╝ ╚═╝  ╚═╝ ╚════╝ ╚═╝  ╚═╝╚═╝  ╚═══╝
+
+ █████╗  ██████╗ ███████╗███╗   ██╗████████╗
+██╔══██╗██╔════╝ ██╔════╝████╗  ██║╚══██╔══╝
+███████║██║  ███╗█████╗  ██╔██╗ ██║   ██║   
+██╔══██║██║   ██║██╔══╝  ██║╚██╗██║   ██║   
+██║  ██║╚██████╔╝███████╗██║ ╚████║   ██║   
+╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═══╝   ╚═╝   
+"""
+
+console = Console()
 
 MAX_STEPS = 8
 
@@ -57,28 +80,52 @@ def run_turn(messages, max_steps=MAX_STEPS):
 
     return f"Stopped: hit max_steps ({max_steps}) without a final answer."
 
+def _gradient_logo(art, start=(45, 212, 191), end=(59, 130, 246)):
+    """Render the logo with a vertical color fade from `start` to `end` RGB."""
+    lines = art.strip("\n").splitlines()
+    n = len(lines)
+    out = Text()
+    for i, line in enumerate(lines):
+        t = i / max(n - 1, 1)                      
+        r = int(start[0] + (end[0] - start[0]) * t)
+        g = int(start[1] + (end[1] - start[1]) * t)
+        b = int(start[2] + (end[2] - start[2]) * t)
+        out.append(line + "\n", style=f"bold #{r:02x}{g:02x}{b:02x}")
+    return out
+
 
 def chat(resume=False):
     if resume and list_sessions():
-        session_id = list_sessions()[0][0]         
+        session_id = list_sessions()[0][0]
         prior = load_session(session_id) or []
-        print(f"Resuming session {session_id} — {len(prior)} messages restored.\n")
+        console.print(f"[dim]Resuming session {session_id} — {len(prior)} messages restored.[/]")
     else:
         session_id = str(uuid.uuid4())
         prior = []
 
     messages = [{"role": "system", "content": SYSTEM_PROMPT}] + prior
-    print("Oajan ready. Type 'exit' or 'quit' to leave.\n")
+
+    banner = Group(
+        _gradient_logo(OAJAN_LOGO),
+        Text(
+            f"{MODEL}  ·  {len(tools.schemas())} tools  ·  "
+            f"{len(list_skills())} skills  ·  type 'exit' to leave",
+            style="dim",
+        ),
+    )
+    console.print(Panel.fit(banner, border_style="#2dd4bf", padding=(1, 4)))
 
     while True:
-        user_input = input("you > ").strip()
+        console.rule(style="grey37")
+        user_input = console.input("[bold green]you ›[/] ").strip()
         if user_input.lower() in {"exit", "quit"}:
-            path = save_session(session_id, messages)
-            print(f"Session saved to {path}")
-            print("Goodbye.")
+            save_session(session_id, messages)
+            console.print("[dim]Session saved. Goodbye.[/]")
             break
         if not user_input:
             continue
+        console.rule(style="grey37")
+        console.print()
 
         memories = recall_memories(user_input)
         trace.memory_recall(memories)
@@ -89,7 +136,14 @@ def chat(resume=False):
             messages.append({"role": "system", "content": block})
 
         messages.append({"role": "user", "content": user_input})
-        answer = run_turn(messages)
-        print(f"\noajan > {answer}\n")
+
+        if trace.is_verbose():
+            answer = run_turn(messages)
+        else:
+            with console.status("[dim]Oajan is thinking…[/]", spinner="dots"):
+                answer = run_turn(messages)
+
+        console.print("\n[bold cyan]oajan ›[/]")
+        console.print(Markdown(answer))
 
         save_memory(session_id, f"User: {user_input}\nAssistant: {answer}")

@@ -39,3 +39,6 @@ def memory_recall(hits):
 
 def retry(attempt, error):
     _emit(f"retry {attempt}: tool-call generation failed, retrying")
+
+def is_verbose():
+    return _verbose
