@@ -27,3 +27,7 @@ workspace/
 
 #Oajan's session logs
 sessions/
+
+# Internal planning / handoff docs — kept locally, not published
+CONTEXT.md
+ROADMAP.md
