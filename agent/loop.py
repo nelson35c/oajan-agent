@@ -4,6 +4,7 @@ from datetime import date
 from agent import tools
 from agent.llm import complete
 from agent.memory.store import save_memory, recall_memories
+from agent.memory.session_store import save_session, load_session, list_sessions
 
 MAX_STEPS = 8
 
@@ -43,14 +44,23 @@ def run_turn(messages, max_steps=MAX_STEPS):
     return f"Stopped: hit max_steps ({max_steps}) without a final answer."
 
 
-def chat():
-    session_id = str(uuid.uuid4())
-    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+def chat(resume=False):
+    if resume and list_sessions():
+        session_id = list_sessions()[0][0]         
+        prior = load_session(session_id) or []
+        print(f"Resuming session {session_id} — {len(prior)} messages restored.\n")
+    else:
+        session_id = str(uuid.uuid4())
+        prior = []
+
+    messages = [{"role": "system", "content": SYSTEM_PROMPT}] + prior
     print("Oajan ready. Type 'exit' or 'quit' to leave.\n")
 
     while True:
         user_input = input("you > ").strip()
         if user_input.lower() in {"exit", "quit"}:
+            path = save_session(session_id, messages)
+            print(f"Session saved to {path}")
             print("Goodbye.")
             break
         if not user_input:

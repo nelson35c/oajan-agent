@@ -181,7 +181,18 @@ Milestones (see ROADMAP.md for the table). Spine = M1–M4.
     `messages` grows with system blocks over long sessions (dedupe/threshold later);
     embeds every turn (2 embed calls/turn); a leftover `test-session` row exists in
     the DB.
-- M5 — Persistence (state survives restart)
+- **M5 — Persistence** ✅ **DONE.** Saves/reloads the actual `messages` thread
+  (distinct from M4: M4 = fuzzy fact recall by similarity; M5 = exact conversation
+  resume). New `agent/memory/session_store.py`: `save_session` writes the list to
+  `sessions/<uuid>.json` (git-ignored), converting SDK assistant objects via
+  `.model_dump()`. `load_session` **cleans on load** — whitelists API-valid fields
+  `{role, content, tool_calls, tool_call_id, name}`, drops `reasoning`/nulls, and
+  strips all `system` messages (fresh prompt re-added, recall regenerated live).
+  `list_sessions` = newest-first. `chat(resume=True)` seeds
+  `messages = [system] + load_session(latest)` and reuses the same `session_id`
+  (so save_session/save_memory keep appending to the same thread). `main.py`:
+  `--resume` flag. Verified: new session mentioned "Kyoto"; after exit,
+  `--resume` recalled "your Kyoto trip" (Kyoto was only in the restored thread).
 - M6 — Skills / learning loop (write learned procedures to a store)
 - M7 — Observability (`--verbose` trace)
 - M8 — Polish + demo (clean CLI, README, small eval suite)
