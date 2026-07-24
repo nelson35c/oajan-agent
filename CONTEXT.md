@@ -159,7 +159,28 @@ Milestones (see ROADMAP.md for the table). Spine = M1–M4.
   into `chat()`. Verified: "15×12" → "add 100 to that" (280, no numbers restated)
   → "save that number to math-result" wrote 280 to `workspace/`. Memory carries
   across turns and chains into a tool.
-- M4 — Long-term memory (RAG-backed vector recall) ← reuses the RAG project
+- **M4 — Long-term memory (vector recall)** ✅ **DONE.** The signature feature.
+  Supabase table `agent_memories (id, session_id, content, embedding vector(1536),
+  created_at)` + HNSW index + `match_memories()` SQL fn (cosine, optional
+  `filter_session`) — mirrors the RAG project's `match_chunks`. Stores **raw
+  exchanges** ("User: …\nAssistant: …"), one row per turn, embedded and recalled by
+  semantic similarity (the thing FTS5 can't do — verified 0.724 similarity on a
+  zero-keyword-overlap query). New package `agent/memory/`:
+  - `embeddings.py` — `embed(text)` via **Gemini** `gemini-embedding-001`,
+    `dimensions=1536` (embeddings stayed on Gemini even though chat moved to Groq;
+    separate `OpenAI` client, separate provider — proof the seams are independent).
+  - `store.py` — `save_memory(session_id, content)` (insert) and
+    `recall_memories(query, ...)` (`.rpc("match_memories")`).
+  - Wired into `chat()` on the Hermes lifecycle: **recall before** the turn (inject
+    top matches as a `system` block, cross-session), **save after** the turn.
+    `session_id = uuid4()` per run. Verified cross-restart: fact saved in session A
+    recalled in a brand-new session B (empty short-term memory).
+  - **Supabase gotcha:** inserts need the **service_role** key (anon key hit RLS
+    `42501`). Key lives only in `.env` (git-ignored).
+  - **Open refinements (not blocking):** recall block is injected every turn →
+    `messages` grows with system blocks over long sessions (dedupe/threshold later);
+    embeds every turn (2 embed calls/turn); a leftover `test-session` row exists in
+    the DB.
 - M5 — Persistence (state survives restart)
 - M6 — Skills / learning loop (write learned procedures to a store)
 - M7 — Observability (`--verbose` trace)

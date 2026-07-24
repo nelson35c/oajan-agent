@@ -1,8 +1,9 @@
 import json
-
+import uuid
+from datetime import date
 from agent import tools
 from agent.llm import complete
-from datetime import date
+from agent.memory.store import save_memory, recall_memories
 
 MAX_STEPS = 8
 
@@ -43,9 +44,8 @@ def run_turn(messages, max_steps=MAX_STEPS):
 
 
 def chat():
-    messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-    ]
+    session_id = str(uuid.uuid4())
+    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
     print("Oajan ready. Type 'exit' or 'quit' to leave.\n")
 
     while True:
@@ -56,6 +56,15 @@ def chat():
         if not user_input:
             continue
 
+        memories = recall_memories(user_input)
+        if memories:
+            block = "Relevant memories from past conversations:\n" + "\n".join(
+                f"- {m['content']}" for m in memories
+            )
+            messages.append({"role": "system", "content": block})
+
         messages.append({"role": "user", "content": user_input})
         answer = run_turn(messages)
         print(f"\noajan > {answer}\n")
+
+        save_memory(session_id, f"User: {user_input}\nAssistant: {answer}")
