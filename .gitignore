@@ -21,3 +21,6 @@ __pycache__/
 # Editor settings
 .vscode/
 .idea/
+
+#Oajan's workspace
+workspace/

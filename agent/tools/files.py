@@ -1,5 +1,15 @@
-from agent.tools import tool
 import os
+from agent.tools import tool
+from pathlib import Path
+
+WORKSPACE = Path(__file__).resolve().parent.parent.parent/ "workspace"
+WORKSPACE.mkdir(exist_ok=True)
+
+def _safe_path(path):
+    candidate = (WORKSPACE / path.lstrip("/\\")).resolve()
+    if not candidate.is_relative_to(WORKSPACE):
+        return None
+    return candidate
 
 READ_FILE_SCHEMA = {
     "type": "function",
@@ -34,9 +44,11 @@ WRITE_FILE_SCHEMA = {
 
 @tool(READ_FILE_SCHEMA)
 def read_file(path):
+    safe = _safe_path(path)
+    if safe is None:
+        return f"Error: '{path}' is outside of Oajan's worksapce and cannot be accessed"
     try:
-        with open(path, "r") as f:
-            return f.read()
+       return safe.read_text()
     except FileNotFoundError:
         return f"Error: no file found at '{path}'"
 
@@ -44,7 +56,10 @@ def read_file(path):
 def write_file(path, content):
     if os.path.splitext(path)[1] == "":
         path = path + ".md"
-    with open(path, "w") as f:
-        f.write(content)
-    return f"Wrote {len(content)} characters to '{path}'"
+    safe = _safe_path(path)
+    if safe is None:
+        return f"Error: '{path}' is outside of Oajan's workspace and cannot be written"
+    safe.parent.mkdir(parents=True, exist_ok=True)
+    safe.write_text(content)
+    return f"Wrote {len(content)} characters to '{safe.name}'"
 

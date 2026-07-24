@@ -116,9 +116,36 @@ Milestones (see ROADMAP.md for the table). Spine = M1–M4.
   - **Tool-use is prompt-driven:** the model won't use a tool just because it's
     registered. `SYSTEM_PROMPT` in `loop.py` now injects `date.today()` and tells
     it to prefer `web_search` over stale memory — that's what made search fire.
-  - **Open follow-ups (not blocking):** file tools have no path sandbox yet (a
-    write goes wherever the model names); trace output is raw/noisy — proper
+  - **Open follow-ups (not blocking):** trace output is raw/noisy — proper
     `--verbose` formatting is M7.
+- **File-path sandbox** ✅ done. `agent/tools/files.py` confines every read/write to
+  a `workspace/` folder at the project root (git-ignored). `_safe_path()` does
+  `(_WORKSPACE / path.lstrip("/\\")).resolve()` then `is_relative_to(WORKSPACE)`;
+  returns `None` on escape. Defeats both `..` traversal (→ None) and absolute
+  paths (`/etc/passwd` → pulled back inside workspace). Applies to `read_file` and
+  `write_file` both. `WORKSPACE.mkdir` at import creates the folder.
+- **Apple ecosystem tools (bonus, post-M2)** ✅ working. `agent/tools/apple.py`
+  drives native macOS apps via **AppleScript through `osascript`** (a
+  `subprocess` call), NOT `run_python`/EventKit/CalDAV — a dedicated tool per
+  capability. Single chokepoint `_osa(script, timeout=30)` handles the three
+  failure modes (non-macOS, timeout, AppleScript error) and returns strings.
+  Tools: `create_note`, `create_reminder`, `read_reminders`,
+  `create_calendar_event`, `read_calendar`. All register automatically — they're
+  in the already-imported `apple` module, so no new import line per tool.
+  - **AppleScript gotchas learned:** string literals need **double quotes** (wrap
+    the Python f-string in single quotes so they pass through); a newline *inside*
+    a quoted AS string is a syntax error — use `& return &` (newlines *between*
+    statements are fine); dates are locale-brittle, so `create_calendar_event`
+    parses ISO in Python and injects numeric components (`set year/month/day/...`)
+    rather than passing a date string; `read_calendar` uses `timeout=45` (Calendar
+    AS is slow). `DEFAULT_CALENDAR` constant at the top of the calendar section
+    holds the user's real calendar name.
+  - **Still open:** quote-escaping — a `"` in any title/body still breaks the
+    script; needs an escape helper before real-world use.
+  - **Model note:** `gemini-2.5-flash-lite` intermittently emits tool calls as
+    plain-text `<ctrl42>call ...` instead of structured `tool_calls` (weakest model
+    at tool use). Retrying usually fixes it; if it becomes chronic, bump to
+    `gemini-2.5-flash` or switch provider (Groq) via the `llm.py` seam.
 - M3 — Short-term memory (conversation across turns)
 - M4 — Long-term memory (RAG-backed vector recall) ← reuses the RAG project
 - M5 — Persistence (state survives restart)
