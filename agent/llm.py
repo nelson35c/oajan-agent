@@ -4,11 +4,11 @@ from openai import OpenAI
 
 load_dotenv()
 
-MODEL = os.getenv("GEMINI_CHAT_MODEL")
+MODEL = os.getenv("GROQ_CHAT_MODEL")
 
 client = OpenAI(
-    api_key = os.getenv("GEMINI_API_KEY"),
-    base_url = "https://generativelanguage.googleapis.com/v1beta/openai/"
+    api_key = os.getenv("GROQ_API_KEY"),
+    base_url = "https://api.groq.com/openai/v1"
 )
 
 def complete(messages, tools=None):

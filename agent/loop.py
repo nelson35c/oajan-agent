@@ -18,12 +18,7 @@ SYSTEM_PROMPT = (
 )
 
 
-def run_agent(task, max_steps=MAX_STEPS):
-    messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": task},
-    ]
-
+def run_turn(messages, max_steps=MAX_STEPS):
     for step in range(1, max_steps + 1):
         message = complete(messages, tools=tools.schemas())
         messages.append(message)
@@ -45,3 +40,22 @@ def run_agent(task, max_steps=MAX_STEPS):
             })
 
     return f"Stopped: hit max_steps ({max_steps}) without a final answer."
+
+
+def chat():
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+    ]
+    print("Oajan ready. Type 'exit' or 'quit' to leave.\n")
+
+    while True:
+        user_input = input("you > ").strip()
+        if user_input.lower() in {"exit", "quit"}:
+            print("Goodbye.")
+            break
+        if not user_input:
+            continue
+
+        messages.append({"role": "user", "content": user_input})
+        answer = run_turn(messages)
+        print(f"\noajan > {answer}\n")

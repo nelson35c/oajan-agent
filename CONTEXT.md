@@ -71,10 +71,16 @@ User → Interface (CLI first) → AGENT LOOP (think→tool→observe→repeat)
 ## Stack
 
 - **Language:** Python, raw (no agent framework for the core).
-- **LLM:** Google **Gemini** via the **OpenAI-compatible endpoint**
-  (`base_url="https://generativelanguage.googleapis.com/v1beta/openai/"`), using
-  the `openai` Python SDK. Model: **`gemini-2.5-flash-lite`** (chosen for a higher
-  free-tier daily quota — see quota note below).
+- **LLM:** provider-swappable via the single `agent/llm.py` seam (base_url + key +
+  model name; nothing else in the codebase changes). **Currently Groq**
+  (`base_url="https://api.groq.com/openai/v1"`, `GROQ_API_KEY` /
+  `GROQ_CHAT_MODEL=openai/gpt-oss-20b`) — free tier, and reliable at tool calls.
+  History: started on Gemini `gemini-2.5-flash-lite`; credits ran out → tried
+  DeepSeek (`deepseek-chat`, but it has **no free tier** → 402) → Groq.
+  **Model tool-call reliability varies a lot:** flash-lite emitted `<ctrl42>`
+  text, Groq's `llama-3.3-70b-versatile` consistently mangled the tool-call
+  format (`tool_use_failed`); `openai/gpt-oss-20b` is the one that works. All the
+  `openai` Python SDK, using OpenAI-compatible endpoints throughout.
 - **Memory + state:** Supabase (pgvector). Embeddings must be **1536 dims**
   (`gemini-embedding-001` with `dimensions=1536`) to match the `vector(1536)`
   column — same rule as the RAG project.
@@ -146,7 +152,13 @@ Milestones (see ROADMAP.md for the table). Spine = M1–M4.
     plain-text `<ctrl42>call ...` instead of structured `tool_calls` (weakest model
     at tool use). Retrying usually fixes it; if it becomes chronic, bump to
     `gemini-2.5-flash` or switch provider (Groq) via the `llm.py` seam.
-- M3 — Short-term memory (conversation across turns)
+- **M3 — Short-term memory** ✅ **DONE.** `messages` was hoisted out of the loop:
+  `run_agent(task)` → `run_turn(messages)` (advances a list passed in, mutating it
+  by reference — that's the memory mechanism). New `chat()` REPL in `loop.py` holds
+  one `messages` list across turns; `main.py` one-shots when given argv, else drops
+  into `chat()`. Verified: "15×12" → "add 100 to that" (280, no numbers restated)
+  → "save that number to math-result" wrote 280 to `workspace/`. Memory carries
+  across turns and chains into a tool.
 - M4 — Long-term memory (RAG-backed vector recall) ← reuses the RAG project
 - M5 — Persistence (state survives restart)
 - M6 — Skills / learning loop (write learned procedures to a store)
