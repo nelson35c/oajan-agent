@@ -5,10 +5,11 @@ from agent import tools, trace
 from agent.llm import complete
 from agent.memory.store import save_memory, recall_memories
 from agent.memory.session_store import save_session, load_session, list_sessions
+from agent.skills import list_skills
 
 MAX_STEPS = 8
 
-SYSTEM_PROMPT = (
+_BASE_PROMPT = (
     "You are Oajan, a task-solving agent. Work through tasks step by step "
     "using the tools available.\n"
     f"Today's date is {date.today().isoformat()}.\n"
@@ -19,6 +20,19 @@ SYSTEM_PROMPT = (
     "Always use the calculator for arithmetic — never compute it yourself."
 )
 
+def _build_system_prompt():
+    skills = list_skills()
+    if not skills:
+        return _BASE_PROMPT
+    index = "\n".join(f"- {name}: {desc}" for name, desc in skills)
+    return (
+        _BASE_PROMPT
+        + "\n\nAvailable skills (reusable procedures). When a task matches one, "
+          "call read_skill with its name to load the full steps, then follow them:\n"
+        + index
+    )
+
+SYSTEM_PROMPT = _build_system_prompt()
 
 def run_turn(messages, max_steps=MAX_STEPS):
     for step in range(1, max_steps + 1):

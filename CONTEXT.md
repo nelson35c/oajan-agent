@@ -193,7 +193,27 @@ Milestones (see ROADMAP.md for the table). Spine = M1–M4.
   (so save_session/save_memory keep appending to the same thread). `main.py`:
   `--resume` flag. Verified: new session mentioned "Kyoto"; after exit,
   `--resume` recalled "your Kyoto trip" (Kyoto was only in the restored thread).
-- M6 — Skills / learning loop (write learned procedures to a store)
+- **M6 — Skills / learning** ✅ **DONE.** (Design-first checkpoint was honored.)
+  A skill = a folder `skills/<name>/SKILL.md` (Hermes / agentskills.io layout, so a
+  skill can bundle reference files) with YAML frontmatter (`name`, `description`) +
+  a numbered-steps body. **Self-hosting design (Nelson's idea):** a hand-written
+  bootstrap skill `create-skill` holds the *authoring standards*; when asked to
+  make a skill, Oajan `read_skill('create-skill')` then `save_skill(...)` — the
+  meta-skill teaches, the tool executes.
+  - `agent/skills.py` — `list_skills()` (name+desc), `read_skill(name)`,
+    `save_skill(name, description, steps)`; `_skill_path` centralizes the
+    `skills/<name>/SKILL.md` convention.
+  - `agent/tools/skill_tools.py` — `read_skill` + `save_skill` tools (auto-register
+    via the already-imported module).
+  - **Index injection:** `loop.py` `_build_system_prompt()` appends every skill's
+    name+description to the base prompt (computed once at import → new skills appear
+    next process). `SYSTEM_PROMPT` stayed a constant, so no call-site churn.
+  - Verified: "create a skill for wishing someone happy birthday" → Oajan read
+    create-skill, then authored `skills/happy-birthday-message/SKILL.md` with valid
+    frontmatter and steps referencing the real `create_note` tool.
+  - **Chosen scope:** explicit authoring + system-prompt index (not auto-creation,
+    not vector search). Auto "closed learning loop" + curator-style maintenance is a
+    later stretch. `skills/` is git-tracked (the learned artifact).
 - **M7 — Observability** ✅ **DONE.** Single trace seam `agent/trace.py`: module
   `_verbose` flag + `set_verbose()`, one `_emit()` chokepoint (the spot LangFuse
   attaches in Phase 2), and event helpers `tool_call` / `tool_result` /

@@ -1,6 +1,7 @@
 import os
 from dotenv import load_dotenv
-from openai import OpenAI
+from openai import OpenAI, BadRequestError
+from agent import trace
 
 load_dotenv()
 
@@ -11,7 +12,7 @@ client = OpenAI(
     base_url = "https://api.groq.com/openai/v1"
 )
 
-def complete(messages, tools=None):
+def complete(messages, tools=None, retries=1):
     for attempt in range(retries + 1):
         try:
             response = client.chat.completions.create(
