@@ -194,7 +194,17 @@ Milestones (see ROADMAP.md for the table). Spine = M1–M4.
   `--resume` flag. Verified: new session mentioned "Kyoto"; after exit,
   `--resume` recalled "your Kyoto trip" (Kyoto was only in the restored thread).
 - M6 — Skills / learning loop (write learned procedures to a store)
-- M7 — Observability (`--verbose` trace)
+- **M7 — Observability** ✅ **DONE.** Single trace seam `agent/trace.py`: module
+  `_verbose` flag + `set_verbose()`, one `_emit()` chokepoint (the spot LangFuse
+  attaches in Phase 2), and event helpers `tool_call` / `tool_result` /
+  `memory_recall` / `retry`. `loop.py` routes the old `print()`s through it; `chat()`
+  traces recall hits + similarities. `main.py` parses `--verbose` (composes with
+  `--resume` and one-shot). Clean by default, detailed on demand.
+  **Retry hardening:** `complete()` in `llm.py` catches `BadRequestError` containing
+  `tool_use_failed` and retries once (bounded `retries+1` loop; re-raises anything
+  else) — so a flaky tool-call generation no longer kills the session. Retries are
+  observable via `trace.retry`.
+  Also: `sessions/` logs untracked from git (were committed before the ignore rule).
 - M8 — Polish + demo (clean CLI, README, small eval suite)
 
 Out of scope (avoid scope creep): multi-agent orchestration, WebSocket gateways,
