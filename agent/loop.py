@@ -31,6 +31,7 @@ OAJAN_LOGO = r"""
 console = Console()
 
 MAX_STEPS = 8
+MAX_TOOL_RESULT_CHARS = 4000   # cap oversized tool results (e.g. Composio) to fit the token budget
 
 _BASE_PROMPT = (
     "You are Oajan, a task-solving agent. Work through tasks step by step "
@@ -72,10 +73,14 @@ def run_turn(messages, max_steps=MAX_STEPS):
             result = tools.dispatch(call.function.name, args)
             trace.tool_result(step, result)
 
+            content = str(result)
+            if len(content) > MAX_TOOL_RESULT_CHARS:
+                content = content[:MAX_TOOL_RESULT_CHARS] + "\n...[truncated]"
+
             messages.append({
                 "role": "tool",
                 "tool_call_id": call.id,
-                "content": str(result),
+                "content": content,
             })
 
     return f"Stopped: hit max_steps ({max_steps}) without a final answer."

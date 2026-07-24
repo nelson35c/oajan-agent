@@ -8,6 +8,10 @@ def tool(schema):
         return fn
     return decorator
 
+def register(name, fn, schema):
+    """Register a tool programmatically (used for MCP/Composio tools)."""
+    _REGISTRY[name] = (fn, schema)
+
 def schemas():
     return [schema for _, schema in _REGISTRY.values()]
 
