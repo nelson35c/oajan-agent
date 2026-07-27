@@ -5,25 +5,32 @@ each incoming message we look up that chat's conversation, run a turn, and send
 the reply back. Built raw on the Telegram Bot API with long-polling — no bot
 framework, just `requests`.
 
-Authorization is enforced up front: only user IDs in TELEGRAM_ALLOWED_IDS get a
-real reply, because the agent can trigger side-effecting tools (send email,
-create events). An unknown sender is told their own ID so it can be allowlisted.
+Each chat maps to a stable session (`telegram-<chat_id>`), so conversations
+persist across restarts and reuse the same long-term memory as the CLI. LangFuse
+traces group by that session too. Authorization is enforced up front: only user
+IDs in TELEGRAM_ALLOWED_IDS get a real reply, because the agent can trigger
+side-effecting tools (send email, create events). An unknown sender is told its
+own ID so it can be allowlisted.
 """
 
 import os
+import threading
 import time
 
 import requests
 from dotenv import load_dotenv
 
 from agent.loop import run_turn, SYSTEM_PROMPT
+from agent.memory.session_store import save_session, load_session
+from agent.memory.store import save_memory, recall_memories
 
 load_dotenv()
 
 _TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 _API = f"https://api.telegram.org/bot{_TOKEN}"
+_MAX_LEN = 4096  # Telegram's per-message character limit
 
-# Per-chat conversation state. In-RAM for now; sessions/memory come next chunk.
+# Per-chat conversation state, kept in RAM and mirrored to sessions/*.json.
 _conversations = {}
 
 
@@ -31,6 +38,12 @@ def _allowed_ids():
     raw = os.getenv("TELEGRAM_ALLOWED_IDS", "")
     return {int(x) for x in raw.replace(" ", "").split(",") if x}
 
+
+def _session_id(chat_id):
+    return f"telegram-{chat_id}"
+
+
+# ----- Telegram Bot API --------------------------------------------------
 
 def _get_updates(offset, timeout=30):
     r = requests.get(
@@ -42,13 +55,59 @@ def _get_updates(offset, timeout=30):
     return r.json().get("result", [])
 
 
+def _chunks(text):
+    """Split a reply into pieces under Telegram's length cap, on line breaks."""
+    text = text or ""
+    while len(text) > _MAX_LEN:
+        cut = text.rfind("\n", 0, _MAX_LEN)
+        if cut <= 0:
+            cut = _MAX_LEN
+        yield text[:cut]
+        text = text[cut:].lstrip("\n")
+    if text:
+        yield text
+
+
 def _send(chat_id, text):
+    for chunk in _chunks(text):
+        requests.post(
+            f"{_API}/sendMessage",
+            json={"chat_id": chat_id, "text": chunk},
+            timeout=30,
+        )
+
+
+def _send_typing(chat_id):
     requests.post(
-        f"{_API}/sendMessage",
-        json={"chat_id": chat_id, "text": text},
+        f"{_API}/sendChatAction",
+        json={"chat_id": chat_id, "action": "typing"},
         timeout=30,
     )
 
+
+def _typing_while(chat_id, stop):
+    """Keep the 'typing…' indicator alive until `stop` is set (it fades ~5s)."""
+    while not stop.is_set():
+        try:
+            _send_typing(chat_id)
+        except Exception:
+            pass
+        stop.wait(4)
+
+
+# ----- conversation state ------------------------------------------------
+
+def _conversation(chat_id):
+    """Return this chat's message list, restoring from disk on first touch."""
+    messages = _conversations.get(chat_id)
+    if messages is None:
+        prior = load_session(_session_id(chat_id)) or []
+        messages = [{"role": "system", "content": SYSTEM_PROMPT}] + prior
+        _conversations[chat_id] = messages
+    return messages
+
+
+# ----- message handling --------------------------------------------------
 
 def _handle(update):
     msg = update.get("message")
@@ -64,16 +123,39 @@ def _handle(update):
                        f"TELEGRAM_ALLOWED_IDS in .env to enable Oajan.")
         return
 
-    if text.strip() == "/start":
+    command = text.strip().lower()
+    if command == "/start":
         _send(chat_id, "Oajan here. Ask me anything.")
         return
+    if command == "/reset":
+        _conversations.pop(chat_id, None)
+        save_session(_session_id(chat_id), [{"role": "system", "content": SYSTEM_PROMPT}])
+        _send(chat_id, "Conversation reset.")
+        return
 
-    messages = _conversations.setdefault(
-        chat_id, [{"role": "system", "content": SYSTEM_PROMPT}]
-    )
+    sid = _session_id(chat_id)
+    messages = _conversation(chat_id)
+
+    memories = recall_memories(text)
+    if memories:
+        block = "Relevant memories from past conversations:\n" + "\n".join(
+            f"- {m['content']}" for m in memories
+        )
+        messages.append({"role": "system", "content": block})
+
     messages.append({"role": "user", "content": text})
-    answer = run_turn(messages)
+
+    stop = threading.Event()
+    typer = threading.Thread(target=_typing_while, args=(chat_id, stop), daemon=True)
+    typer.start()
+    try:
+        answer = run_turn(messages, session_id=sid)
+    finally:
+        stop.set()
+
     _send(chat_id, answer)
+    save_memory(sid, f"User: {text}\nAssistant: {answer}")
+    save_session(sid, messages)
 
 
 def run():
