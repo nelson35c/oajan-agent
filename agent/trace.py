@@ -61,26 +61,64 @@ def _last_user_content(messages):
 
 
 @contextmanager
-def turn(messages):
-    """Wrap one agent turn as a LangFuse trace. Yields the span (or None)."""
+def turn(messages, session_id=None):
+    """Wrap one agent turn as a LangFuse trace. Yields the span (or None).
+
+    `session_id` groups every turn of one conversation together in the
+    dashboard; the LLM generation and tool spans nest under this root.
+    """
     client = _client()
     if client is None:
         yield None
         return
-    with client.start_as_current_observation(
-        name="oajan-turn",
-        as_type="agent",
-        input=_last_user_content(messages),
-    ) as span:
-        try:
-            yield span
-        finally:
-            client.flush()
+    from langfuse import propagate_attributes
+    with propagate_attributes(session_id=session_id, tags=["oajan"]):
+        with client.start_as_current_observation(
+            name="oajan-turn",
+            as_type="agent",
+            input=_last_user_content(messages),
+        ) as span:
+            try:
+                yield span
+            finally:
+                client.flush()
 
 
 def set_turn_output(span, output):
     if span is not None:
         span.update(output=output)
+
+
+class _ToolObs:
+    """Carries a tool's result out of the `tool_span` block to the caller."""
+    __slots__ = ("value",)
+
+    def __init__(self):
+        self.value = None
+
+    def set(self, value):
+        self.value = value
+
+
+@contextmanager
+def tool_span(step, name, args):
+    """Wrap one tool call as a nested span. Yields a handle whose `.set(result)`
+    records the output for both LangFuse and the verbose printer."""
+    tool_call(step, name, args)  # verbose print (no-op unless --verbose)
+    obs = _ToolObs()
+    client = _client()
+    if client is None:
+        try:
+            yield obs
+        finally:
+            tool_result(step, obs.value)
+        return
+    with client.start_as_current_observation(name=name, as_type="tool", input=args) as span:
+        try:
+            yield obs
+        finally:
+            span.update(output=obs.value)
+            tool_result(step, obs.value)
 
 
 # ----- verbose printer ---------------------------------------------------

@@ -96,8 +96,8 @@ def _seal_pending_tool_calls(messages):
                 answered.add(call.id)
 
 
-def run_turn(messages, max_steps=MAX_STEPS):
-    with trace.turn(messages) as span:
+def run_turn(messages, max_steps=MAX_STEPS, session_id=None):
+    with trace.turn(messages, session_id=session_id) as span:
         answer = None
         try:
             for step in range(1, max_steps + 1):
@@ -110,10 +110,9 @@ def run_turn(messages, max_steps=MAX_STEPS):
 
                 for call in message.tool_calls:
                     args = json.loads(call.function.arguments)
-                    trace.tool_call(step, call.function.name, args)
-
-                    result = tools.dispatch(call.function.name, args)
-                    trace.tool_result(step, result)
+                    with trace.tool_span(step, call.function.name, args) as obs:
+                        result = tools.dispatch(call.function.name, args)
+                        obs.set(result)
 
                     content = str(result)
                     if len(content) > MAX_TOOL_RESULT_CHARS:
@@ -201,10 +200,10 @@ def chat(resume=False):
         messages.append({"role": "user", "content": user_input})
 
         if trace.is_verbose():
-            answer = run_turn(messages)
+            answer = run_turn(messages, session_id=session_id)
         else:
             with console.status("[dim]Oajan is thinking…[/]", spinner="dots"):
-                answer = run_turn(messages)
+                answer = run_turn(messages, session_id=session_id)
 
         console.print("\n[bold cyan]oajan ›[/]")
         console.print(Markdown(answer))
