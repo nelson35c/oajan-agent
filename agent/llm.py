@@ -5,11 +5,11 @@ from agent import trace
 
 load_dotenv()
 
-MODEL = os.getenv("PERPLEXITY_CHAT_MODEL")
+MODEL = os.getenv("ANTHROPIC_CHAT_MODEL")
 
 client = OpenAI(
-    api_key = os.getenv("PERPLEXITY_API_KEY"),
-    base_url = "https://api.perplexity.ai"
+    api_key = os.getenv("ANTHROPIC_API_KEY"),
+    base_url = "https://api.anthropic.com/v1/"
 )
 
 def complete(messages, tools=None, retries=1):

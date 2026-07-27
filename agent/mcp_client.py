@@ -8,11 +8,15 @@ from agent import tools as _tools
 load_dotenv()
 
 # Create one authenticated Composio session; reuse its URL + headers.
+# No `toolkits` scope -> the session exposes the full meta-router across the
+# entire Composio catalog (1000+ apps). The model discovers tools at runtime
+# via COMPOSIO_SEARCH_TOOLS and runs them through the nested
+# COMPOSIO_MULTI_EXECUTE_TOOL. manage_connections=True hands the agent
+# COMPOSIO_MANAGE_CONNECTIONS so it can kick off OAuth for a new app on demand.
 _composio = Composio()
 _session = _composio.create(
     user_id="nelson",
-    toolkits=["gmail"],   # expose Gmail tools DIRECTLY (top-level args) instead of the nested meta-router
-    manage_connections={"wait_for_connections": True},
+    manage_connections=True,
 )
 _URL = _session.mcp.url
 _HEADERS = _session.mcp.headers

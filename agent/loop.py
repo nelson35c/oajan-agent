@@ -42,12 +42,18 @@ _BASE_PROMPT = (
     "web_search tool instead of answering from memory. Do not refuse a question "
     "as 'in the future' — check with web_search first.\n"
     "Always use the calculator for arithmetic — never compute it yourself.\n"
+    "You reach external apps (Gmail, Slack, GitHub, Notion, and 1000+ more) "
+    "through the Composio meta-router. The flow is: (1) call COMPOSIO_SEARCH_TOOLS "
+    "with a plain-language query (e.g. 'create a gmail draft') to find the exact "
+    "tool slug; (2) if unsure of a tool's parameters, call COMPOSIO_GET_TOOL_SCHEMAS "
+    "for that slug; (3) call COMPOSIO_MULTI_EXECUTE_TOOL to run it. "
     "When calling COMPOSIO_MULTI_EXECUTE_TOOL, you MUST fill each tool's "
     "'arguments' object with the actual parameter values (for example "
     "recipient_email, subject, body for a Gmail draft). NEVER send an empty "
     "'arguments': {} — that produces a blank, invalid result. Only include the "
-    "specific tool you need (e.g. GMAIL_CREATE_EMAIL_DRAFT); do not batch unrelated "
-    "read tools."
+    "specific tool you need; do not batch unrelated read tools. "
+    "If a tool fails because the app is not connected, call "
+    "COMPOSIO_MANAGE_CONNECTIONS to start the OAuth flow and give the user the link."
 )
 
 def _build_system_prompt():

@@ -10,14 +10,16 @@ if __name__ == "__main__":
         args = [a for a in args if a != "--verbose"]
 
     if not args:
-        from agent.composio_tools import register_composio_tools
+        from agent.mcp_client import register_composio_tools
         register_composio_tools()
         chat()
     elif args[0] == "--resume":
-        from agent.composio_tools import register_composio_tools
+        from agent.mcp_client import register_composio_tools
         register_composio_tools()
         chat(resume=True)
     else:
+        from agent.mcp_client import register_composio_tools
+        register_composio_tools()
         task = " ".join(args)
         messages = [
             {"role": "system", "content": SYSTEM_PROMPT},
