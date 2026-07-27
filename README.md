@@ -28,17 +28,23 @@ LangChain or LlamaIndex.
 
 - **Reasoning loop** — a ReAct-style `think → act → observe` loop that calls tools
   and feeds the results back to the model until it produces a final answer.
-- **11 tools** across a self-registering registry: arithmetic, web search,
-  sandboxed file I/O, and native macOS integration (Notes, Reminders, Calendar).
+  A running workflow can be interrupted mid-loop with `Ctrl+C`, which stops cleanly
+  and leaves a valid conversation to continue from.
+- **11 local tools** across a self-registering registry: arithmetic, web search,
+  sandboxed file I/O, and native macOS integration (Notes, Reminders, Calendar) —
+  **plus a Composio MCP meta-router** that reaches 1000+ external apps (Gmail,
+  Slack, GitHub, Notion, …), with tools discovered and executed at runtime.
 - **Three kinds of memory** — short-term (in-conversation), long-term (semantic
   vector recall over past exchanges), and persistence (resume a conversation after
   restart).
 - **A self-hosting skill system** — the agent writes reusable procedures for its
   future self by following a procedure it can read.
-- **Observability** — a single trace seam with a `--verbose` mode and automatic
-  retry on flaky tool-call generations.
+- **Observability** — a single trace seam that drives both a `--verbose` mode and
+  **LangFuse**: every turn is one trace, with the LLM generation and each tool call
+  as nested spans (tokens, cost, latency), grouped by conversation session.
 - **Provider-swappable LLM** — the model backend is one file; the agent has run on
-  Gemini, DeepSeek, and Groq with no changes to the loop.
+  Anthropic (Claude Sonnet 5), Gemini, DeepSeek, Groq, and Perplexity with no
+  changes to the loop.
 
 ## Architecture
 
@@ -46,7 +52,7 @@ LangChain or LlamaIndex.
         User
           │
           ▼
-   ┌──────────────┐      CLI: chat REPL, --resume, --verbose, one-shot
+   ┌──────────────┐      CLI: chat REPL, --resume, --verbose, one-shot, Ctrl+C stop
    │  Interface   │
    └──────┬───────┘
           ▼
@@ -58,18 +64,20 @@ LangChain or LlamaIndex.
     │              │              │
 ┌───▼─────┐  ┌─────▼──────┐  ┌────▼──────────────┐
 │  LLM     │  │   Tool     │  │      Memory        │
-│  client  │  │  registry  │  │  short · long · )  │
+│  client  │  │  registry  │  │  short · long ·    │
 │(swappable)│  │ (@tool)    │  │  persistence       │
 └──────────┘  └─────┬──────┘  └────┬──────────────┘
                     │              │
-              ┌─────▼─────┐   ┌────▼──────────────┐
-              │  calculator │   │  Supabase pgvector │
-              │  web_search │   │  (vector recall)   │
-              │  files      │   │  sessions/*.json   │
-              │  apple      │   │  (persistence)     │
-              │  skills     │   └───────────────────┘
-              └───────────┘
-     every step ──▶ trace seam (observability)
+          ┌─────────┴────────┐  ┌──▼────────────────┐
+     ┌────▼──────┐   ┌───────▼─┐ │  Supabase pgvector │
+     │  local     │   │ Composio │ │  (vector recall)   │
+     │  calculator│   │   MCP    │ │  sessions/*.json   │
+     │  web_search│   │  router  │ │  (persistence)     │
+     │  files     │   │ 1000+    │ └───────────────────┘
+     │  apple     │   │  apps    │
+     │  skills    │   └──────────┘
+     └───────────┘
+     every step ──▶ trace seam ──▶ --verbose  ·  LangFuse
 ```
 
 ## The three tiers of memory
@@ -112,16 +120,41 @@ macOS tools drive native apps through AppleScript (`osascript`) — no
 resolved and rejected if it escapes `workspace/`, defeating `..` traversal and
 absolute-path escapes.
 
+## External apps via MCP (Composio)
+
+Beyond the local tools, the agent connects to [Composio](https://composio.dev) as
+an **MCP client**, which exposes a meta-router over 1000+ external apps. Instead of
+hardcoding each integration, four meta-tools are registered
+(`COMPOSIO_SEARCH_TOOLS`, `COMPOSIO_GET_TOOL_SCHEMAS`, `COMPOSIO_MULTI_EXECUTE_TOOL`,
+`COMPOSIO_MANAGE_CONNECTIONS`) and the model discovers what it needs at runtime:
+search for a tool by intent → fetch its schema → execute it → start an OAuth flow
+if the app isn't connected yet.
+
+That router requires the model to assemble two-level-nested execution arguments,
+which weaker models leave empty. Claude Sonnet 5 constructs them reliably, so it is
+the default chat model — a concrete case of the provider seam mattering. `Ctrl+C`
+still stops these workflows cleanly mid-run.
+
+## Observability
+
+The `trace.py` seam is the single point every step flows through, so a backend can
+attach without touching the loop. Two are wired: the `--verbose` printer, and
+**LangFuse**. When LangFuse keys are present, each turn opens one trace with the
+LLM generation and every tool call as nested spans — model, token counts, cost, and
+latency included — and all turns of a conversation are grouped by `session_id`.
+With no keys set it is a zero-cost no-op, so the agent runs the same either way.
+
 ## Tech stack
 
 - **Language:** Python, raw (no agent framework for the core)
 - **LLM:** provider-swappable via the `openai` SDK against OpenAI-compatible
-  endpoints; currently Groq (`openai/gpt-oss-20b`)
+  endpoints; currently Anthropic (`claude-sonnet-5`)
 - **Embeddings:** Gemini `gemini-embedding-001` (1536 dims)
 - **Vector store:** Supabase (pgvector)
-- **Tools:** plain Python functions; Tavily for search; `osascript` for macOS
+- **Tools:** plain Python functions; Tavily for search; `osascript` for macOS;
+  Composio over MCP for 1000+ external apps
 - **CLI:** `rich` for the terminal UI
-- **Observability:** structured trace seam (LangFuse-ready)
+- **Observability:** structured trace seam → LangFuse
 
 ## Setup
 
@@ -134,13 +167,21 @@ pip install -r requirements.txt
 Create a `.env` (see `.env.example`):
 
 ```
-GROQ_API_KEY=...
-GROQ_CHAT_MODEL=openai/gpt-oss-20b
+ANTHROPIC_API_KEY=...
+ANTHROPIC_CHAT_MODEL=claude-sonnet-5
 GEMINI_API_KEY=...              # embeddings only
 TAVILY_API_KEY=...
 SUPABASE_URL=https://<project>.supabase.co
 SUPABASE_KEY=...                # service_role key
+COMPOSIO_API_KEY=...            # optional — external apps over MCP
+LANGFUSE_PUBLIC_KEY=...         # optional — tracing
+LANGFUSE_SECRET_KEY=...
+LANGFUSE_HOST=https://cloud.langfuse.com
 ```
+
+The chat model is the one seam that changes providers: swap these two lines and the
+`base_url` in `agent/llm.py`. Composio and LangFuse are both optional — leave their
+keys blank and those features simply switch off.
 
 Long-term memory needs a Supabase table + recall function:
 
@@ -178,7 +219,7 @@ $$;
 ## Usage
 
 ```bash
-python main.py                     # interactive chat
+python main.py                     # interactive chat (Ctrl+C stops a running turn)
 python main.py --resume            # resume the most recent conversation
 python main.py --verbose           # show the full reasoning trace
 python main.py "what is 47 * 89"   # one-shot
@@ -192,7 +233,8 @@ main.py                      CLI entry point
 agent/
   loop.py                    the agent loop + chat REPL
   llm.py                     LLM client (the provider seam)
-  trace.py                   observability seam
+  mcp_client.py              Composio MCP meta-router (1000+ apps)
+  trace.py                   observability seam (--verbose · LangFuse)
   skills.py                  skill discovery / authoring
   tools/                     self-registering tool modules
     __init__.py              the @tool registry
@@ -218,5 +260,7 @@ sessions/                    saved conversation threads (git-ignored)
   vector search. A dedicated vector DB is the right call at much larger scale.
 - **One provider seam.** All model-specific code lives in `llm.py`; swapping
   providers is a base-URL, key, and model-name change and nothing else.
-- **Frameworks belong around the loop, never inside it.** Observability (LangFuse)
-  and MCP are candidates to layer on later; the reasoning loop stays hand-written.
+- **Frameworks belong around the loop, never inside it.** LangFuse (observability)
+  and MCP (external apps via Composio) both attach at the edges — through the trace
+  seam and the tool registry — while the reasoning loop stays hand-written. They are
+  layered on *around* the loop, exactly where a framework should live.
