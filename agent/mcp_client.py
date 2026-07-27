@@ -11,6 +11,7 @@ load_dotenv()
 _composio = Composio()
 _session = _composio.create(
     user_id="nelson",
+    toolkits=["gmail"],   # expose Gmail tools DIRECTLY (top-level args) instead of the nested meta-router
     manage_connections={"wait_for_connections": True},
 )
 _URL = _session.mcp.url

@@ -5,11 +5,11 @@ from agent import trace
 
 load_dotenv()
 
-MODEL = os.getenv("GROQ_CHAT_MODEL")
+MODEL = os.getenv("PERPLEXITY_CHAT_MODEL")
 
 client = OpenAI(
-    api_key = os.getenv("GROQ_API_KEY"),
-    base_url = "https://api.groq.com/openai/v1"
+    api_key = os.getenv("PERPLEXITY_API_KEY"),
+    base_url = "https://api.perplexity.ai"
 )
 
 def complete(messages, tools=None, retries=1):

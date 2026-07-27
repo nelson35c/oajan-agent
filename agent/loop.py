@@ -31,7 +31,7 @@ OAJAN_LOGO = r"""
 console = Console()
 
 MAX_STEPS = 8
-MAX_TOOL_RESULT_CHARS = 4000   # cap oversized tool results (e.g. Composio) to fit the token budget
+MAX_TOOL_RESULT_CHARS = 50000   # generous cap (Perplexity has a large context); keeps Composio schemas intact
 
 _BASE_PROMPT = (
     "You are Oajan, a task-solving agent. Work through tasks step by step "
@@ -41,7 +41,13 @@ _BASE_PROMPT = (
     "recent facts, prices, or information you are not certain is current, use the "
     "web_search tool instead of answering from memory. Do not refuse a question "
     "as 'in the future' — check with web_search first.\n"
-    "Always use the calculator for arithmetic — never compute it yourself."
+    "Always use the calculator for arithmetic — never compute it yourself.\n"
+    "When calling COMPOSIO_MULTI_EXECUTE_TOOL, you MUST fill each tool's "
+    "'arguments' object with the actual parameter values (for example "
+    "recipient_email, subject, body for a Gmail draft). NEVER send an empty "
+    "'arguments': {} — that produces a blank, invalid result. Only include the "
+    "specific tool you need (e.g. GMAIL_CREATE_EMAIL_DRAFT); do not batch unrelated "
+    "read tools."
 )
 
 def _build_system_prompt():
