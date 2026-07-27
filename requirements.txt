@@ -4,6 +4,7 @@ aiosignal==1.4.0
 annotated-types==0.7.0
 anyio==4.14.2
 attrs==26.1.0
+backoff==2.2.1
 certifi==2026.6.17
 cffi==2.1.0
 charset-normalizer==3.4.9
@@ -14,6 +15,7 @@ cryptography==49.0.0
 deprecation==2.1.0
 distro==1.9.0
 frozenlist==1.8.0
+googleapis-common-protos==1.75.0
 h11==0.16.0
 h2==4.4.0
 hpack==4.2.0
@@ -26,14 +28,23 @@ jiter==0.16.0
 json-schema-to-pydantic==0.4.11
 jsonschema==4.26.0
 jsonschema-specifications==2025.9.1
+langfuse==4.14.1
 markdown-it-py==4.2.0
 mcp==1.28.1
 mdurl==0.1.2
 multidict==6.7.1
 openai==2.46.0
+opentelemetry-api==1.44.0
+opentelemetry-exporter-otlp-proto-common==1.44.0
+opentelemetry-exporter-otlp-proto-http==1.44.0
+opentelemetry-proto==1.44.0
+opentelemetry-sdk==1.44.0
+opentelemetry-semantic-conventions==0.65b0
 packaging==26.2
+platformdirs==4.11.0
 postgrest==2.31.0
 propcache==0.5.2
+protobuf==7.35.1
 pycparser==3.0
 pydantic==2.13.4
 pydantic-settings==2.14.2
@@ -67,4 +78,5 @@ urllib3==2.7.0
 uvicorn==0.51.0
 websocket-client==1.9.0
 websockets==15.0.1
+wrapt==2.2.2
 yarl==1.24.5

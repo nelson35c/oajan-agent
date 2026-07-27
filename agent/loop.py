@@ -97,35 +97,41 @@ def _seal_pending_tool_calls(messages):
 
 
 def run_turn(messages, max_steps=MAX_STEPS):
-    try:
-        for step in range(1, max_steps + 1):
-            message = complete(messages, tools=tools.schemas())
-            messages.append(message)
+    with trace.turn(messages) as span:
+        answer = None
+        try:
+            for step in range(1, max_steps + 1):
+                message = complete(messages, tools=tools.schemas())
+                messages.append(message)
 
-            if not message.tool_calls:
-                return message.content
+                if not message.tool_calls:
+                    answer = message.content
+                    break
 
-            for call in message.tool_calls:
-                args = json.loads(call.function.arguments)
-                trace.tool_call(step, call.function.name, args)
+                for call in message.tool_calls:
+                    args = json.loads(call.function.arguments)
+                    trace.tool_call(step, call.function.name, args)
 
-                result = tools.dispatch(call.function.name, args)
-                trace.tool_result(step, result)
+                    result = tools.dispatch(call.function.name, args)
+                    trace.tool_result(step, result)
 
-                content = str(result)
-                if len(content) > MAX_TOOL_RESULT_CHARS:
-                    content = content[:MAX_TOOL_RESULT_CHARS] + "\n...[truncated]"
+                    content = str(result)
+                    if len(content) > MAX_TOOL_RESULT_CHARS:
+                        content = content[:MAX_TOOL_RESULT_CHARS] + "\n...[truncated]"
 
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": call.id,
-                    "content": content,
-                })
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": call.id,
+                        "content": content,
+                    })
+            else:
+                answer = f"Stopped: hit max_steps ({max_steps}) without a final answer."
+        except KeyboardInterrupt:
+            _seal_pending_tool_calls(messages)
+            answer = STOP_MESSAGE
 
-        return f"Stopped: hit max_steps ({max_steps}) without a final answer."
-    except KeyboardInterrupt:
-        _seal_pending_tool_calls(messages)
-        return STOP_MESSAGE
+        trace.set_turn_output(span, answer)
+    return answer
 
 def _gradient_logo(art, start=(45, 212, 191), end=(59, 130, 246)):
     """Render the logo with a vertical color fade from `start` to `end` RGB."""

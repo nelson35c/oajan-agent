@@ -1,11 +1,19 @@
 import os
 from dotenv import load_dotenv
-from openai import OpenAI, BadRequestError
+from openai import BadRequestError
 from agent import trace
 
 load_dotenv()
 
 MODEL = os.getenv("ANTHROPIC_CHAT_MODEL")
+
+# When LangFuse is configured, use its drop-in OpenAI client so every call is
+# captured as a generation (model, tokens, cost, latency) under the active
+# turn trace. Otherwise fall back to the plain client — same interface.
+if trace.langfuse_enabled():
+    from langfuse.openai import OpenAI
+else:
+    from openai import OpenAI
 
 client = OpenAI(
     api_key = os.getenv("ANTHROPIC_API_KEY"),
