@@ -32,6 +32,7 @@ console = Console()
 
 MAX_STEPS = 8
 MAX_TOOL_RESULT_CHARS = 50000   # generous cap (Perplexity has a large context); keeps Composio schemas intact
+STOP_MESSAGE = "⏹  Stopped."    # returned when the user interrupts a running turn with Ctrl+C
 
 _BASE_PROMPT = (
     "You are Oajan, a task-solving agent. Work through tasks step by step "
@@ -70,32 +71,61 @@ def _build_system_prompt():
 
 SYSTEM_PROMPT = _build_system_prompt()
 
+def _msg_field(m, key):
+    """Read a field from a message that may be a dict or an SDK object."""
+    return m.get(key) if isinstance(m, dict) else getattr(m, key, None)
+
+
+def _seal_pending_tool_calls(messages):
+    """After an interrupt, add a placeholder result for every tool_call that
+    never got one. The chat APIs require each tool_call to be followed by a
+    matching tool result, so this keeps the history valid for the next turn."""
+    answered = {
+        _msg_field(m, "tool_call_id")
+        for m in messages
+        if _msg_field(m, "role") == "tool"
+    }
+    for m in messages:
+        for call in _msg_field(m, "tool_calls") or []:
+            if call.id not in answered:
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": call.id,
+                    "content": "[Interrupted by user before this tool ran.]",
+                })
+                answered.add(call.id)
+
+
 def run_turn(messages, max_steps=MAX_STEPS):
-    for step in range(1, max_steps + 1):
-        message = complete(messages, tools=tools.schemas())
-        messages.append(message)
+    try:
+        for step in range(1, max_steps + 1):
+            message = complete(messages, tools=tools.schemas())
+            messages.append(message)
 
-        if not message.tool_calls:
-            return message.content
+            if not message.tool_calls:
+                return message.content
 
-        for call in message.tool_calls:
-            args = json.loads(call.function.arguments)
-            trace.tool_call(step, call.function.name, args)
+            for call in message.tool_calls:
+                args = json.loads(call.function.arguments)
+                trace.tool_call(step, call.function.name, args)
 
-            result = tools.dispatch(call.function.name, args)
-            trace.tool_result(step, result)
+                result = tools.dispatch(call.function.name, args)
+                trace.tool_result(step, result)
 
-            content = str(result)
-            if len(content) > MAX_TOOL_RESULT_CHARS:
-                content = content[:MAX_TOOL_RESULT_CHARS] + "\n...[truncated]"
+                content = str(result)
+                if len(content) > MAX_TOOL_RESULT_CHARS:
+                    content = content[:MAX_TOOL_RESULT_CHARS] + "\n...[truncated]"
 
-            messages.append({
-                "role": "tool",
-                "tool_call_id": call.id,
-                "content": content,
-            })
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": call.id,
+                    "content": content,
+                })
 
-    return f"Stopped: hit max_steps ({max_steps}) without a final answer."
+        return f"Stopped: hit max_steps ({max_steps}) without a final answer."
+    except KeyboardInterrupt:
+        _seal_pending_tool_calls(messages)
+        return STOP_MESSAGE
 
 def _gradient_logo(art, start=(45, 212, 191), end=(59, 130, 246)):
     """Render the logo with a vertical color fade from `start` to `end` RGB."""
@@ -126,7 +156,7 @@ def chat(resume=False):
         _gradient_logo(OAJAN_LOGO),
         Text(
             f"{MODEL}  ·  {len(tools.schemas())} tools  ·  "
-            f"{len(list_skills())} skills  ·  type 'exit' to leave",
+            f"{len(list_skills())} skills  ·  Ctrl+C to stop  ·  type 'exit' to leave",
             style="dim",
         ),
     )
@@ -134,7 +164,17 @@ def chat(resume=False):
 
     while True:
         console.rule(style="grey37")
-        user_input = console.input("[bold green]you ›[/] ").strip()
+        try:
+            user_input = console.input("[bold green]you ›[/] ").strip()
+        except KeyboardInterrupt:
+            # Ctrl+C at an idle prompt cancels the line rather than quitting.
+            console.print("[dim](type 'exit' to leave)[/]")
+            continue
+        except EOFError:
+            # Ctrl+D quits cleanly, like 'exit'.
+            save_session(session_id, messages)
+            console.print("\n[dim]Session saved. Goodbye.[/]")
+            break
         if user_input.lower() in {"exit", "quit"}:
             save_session(session_id, messages)
             console.print("[dim]Session saved. Goodbye.[/]")
@@ -163,4 +203,5 @@ def chat(resume=False):
         console.print("\n[bold cyan]oajan ›[/]")
         console.print(Markdown(answer))
 
-        save_memory(session_id, f"User: {user_input}\nAssistant: {answer}")
+        if answer != STOP_MESSAGE:
+            save_memory(session_id, f"User: {user_input}\nAssistant: {answer}")
