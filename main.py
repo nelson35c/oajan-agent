@@ -9,7 +9,12 @@ if __name__ == "__main__":
         trace.set_verbose(True)
         args = [a for a in args if a != "--verbose"]
 
-    if not args:
+    if args and args[0] == "--telegram":
+        from agent.mcp_client import register_composio_tools
+        register_composio_tools()
+        from agent.gateway.telegram import run as run_telegram
+        run_telegram()
+    elif not args:
         from agent.mcp_client import register_composio_tools
         register_composio_tools()
         chat()
