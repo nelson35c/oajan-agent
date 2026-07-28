@@ -34,9 +34,16 @@ MAX_STEPS = 8
 MAX_TOOL_RESULT_CHARS = 50000   # generous cap (Perplexity has a large context); keeps Composio schemas intact
 STOP_MESSAGE = "⏹  Stopped."    # returned when the user interrupts a running turn with Ctrl+C
 
-_BASE_PROMPT = (
-    "You are Oajan, a task-solving agent. Work through tasks step by step "
-    "using the tools available.\n"
+# The "soul" is the identity half of the prompt — swappable per agent (see
+# agents/<name>/AGENT.md). This one is the fallback when no agent file is loaded.
+_DEFAULT_SOUL = (
+    "You are Oajan, a pragmatic, general-purpose task-solving assistant. "
+    "Work through tasks step by step using the tools available."
+)
+
+# The operating rules are shared by every agent — they describe how the harness
+# and its tools work, not who the agent is, so they are appended to any soul.
+_OPERATING_RULES = (
     f"Today's date is {date.today().isoformat()}.\n"
     "Your training data may be out of date. For anything about current events, "
     "recent facts, prices, or information you are not certain is current, use the "
@@ -57,17 +64,20 @@ _BASE_PROMPT = (
     "COMPOSIO_MANAGE_CONNECTIONS to start the OAuth flow and give the user the link."
 )
 
-def _build_system_prompt():
+
+def _build_system_prompt(soul=None):
+    """Compose a full system prompt: an agent's soul + shared operating rules +
+    the skill index. Passing no soul yields the default Oajan identity."""
+    prompt = (soul or _DEFAULT_SOUL) + "\n\n" + _OPERATING_RULES
     skills = list_skills()
-    if not skills:
-        return _BASE_PROMPT
-    index = "\n".join(f"- {name}: {desc}" for name, desc in skills)
-    return (
-        _BASE_PROMPT
-        + "\n\nAvailable skills (reusable procedures). When a task matches one, "
-          "call read_skill with its name to load the full steps, then follow them:\n"
-        + index
-    )
+    if skills:
+        index = "\n".join(f"- {name}: {desc}" for name, desc in skills)
+        prompt += (
+            "\n\nAvailable skills (reusable procedures). When a task matches one, "
+            "call read_skill with its name to load the full steps, then follow them:\n"
+            + index
+        )
+    return prompt
 
 SYSTEM_PROMPT = _build_system_prompt()
 
@@ -176,21 +186,33 @@ def _capture_voice():
             return None
 
 
-def chat(resume=False):
-    if resume and list_sessions():
-        session_id = list_sessions()[0][0]
+def chat(resume=False, agent=None):
+    from agent.agents import load_agent, DEFAULT_AGENT
+
+    active = load_agent(agent)
+    if agent and active is None:
+        console.print(f"[yellow]No agent '{agent}' — using '{DEFAULT_AGENT}'.[/]")
+        active = load_agent(DEFAULT_AGENT)
+    name = active.name if active else DEFAULT_AGENT
+    system_prompt = _build_system_prompt(active.soul if active else None)
+
+    # Each agent namespaces its own saved threads and long-term memory.
+    prefix = f"{name}-"
+    threads = [s[0] for s in list_sessions() if s[0].startswith(prefix)]
+    if resume and threads:
+        session_id = threads[0]
         prior = load_session(session_id) or []
-        console.print(f"[dim]Resuming session {session_id} — {len(prior)} messages restored.[/]")
+        console.print(f"[dim]Resuming {session_id} — {len(prior)} messages restored.[/]")
     else:
-        session_id = str(uuid.uuid4())
+        session_id = prefix + str(uuid.uuid4())
         prior = []
 
-    messages = [{"role": "system", "content": SYSTEM_PROMPT}] + prior
+    messages = [{"role": "system", "content": system_prompt}] + prior
 
     banner = Group(
         _gradient_logo(OAJAN_LOGO),
         Text(
-            f"{MODEL}  ·  {len(tools.schemas())} tools  ·  "
+            f"{name}  ·  {MODEL}  ·  {len(tools.schemas())} tools  ·  "
             f"{len(list_skills())} skills  ·  /voice to speak  ·  Ctrl+C to stop  ·  "
             f"type 'exit' to leave",
             style="dim",
@@ -226,7 +248,7 @@ def chat(resume=False):
         console.rule(style="grey37")
         console.print()
 
-        memories = recall_memories(user_input)
+        memories = recall_memories(user_input, session_id=name)
         trace.memory_recall(memories)
         if memories:
             block = "Relevant memories from past conversations:\n" + "\n".join(
@@ -239,11 +261,11 @@ def chat(resume=False):
         if trace.is_verbose():
             answer = run_turn(messages, session_id=session_id)
         else:
-            with console.status("[dim]Oajan is thinking…[/]", spinner="dots"):
+            with console.status(f"[dim]{name} is thinking…[/]", spinner="dots"):
                 answer = run_turn(messages, session_id=session_id)
 
-        console.print("\n[bold cyan]oajan ›[/]")
+        console.print(f"\n[bold cyan]{name} ›[/]")
         console.print(Markdown(answer))
 
         if answer != STOP_MESSAGE:
-            save_memory(session_id, f"User: {user_input}\nAssistant: {answer}")
+            save_memory(name, f"User: {user_input}\nAssistant: {answer}")

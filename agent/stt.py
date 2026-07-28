@@ -4,7 +4,6 @@ Groq's Whisper (`whisper-large-v3`) via its OpenAI-compatible endpoint.
 """
 
 import os
-
 from dotenv import load_dotenv
 from openai import OpenAI
 
