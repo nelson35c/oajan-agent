@@ -146,6 +146,36 @@ def _gradient_logo(art, start=(45, 212, 191), end=(59, 130, 246)):
     return out
 
 
+def _capture_voice():
+    """Record from the mic and transcribe it. Returns the text (or None)."""
+    from agent import stt
+    if not stt.available():
+        console.print("[yellow]Voice needs GROQ_API_KEY set in .env.[/]")
+        return None
+    try:
+        from agent.voice_input import record_until_enter
+    except Exception as exc:
+        console.print(f"[yellow]Voice needs the 'sounddevice' package ({exc}).[/]")
+        return None
+
+    console.print("[dim]🎙️  Recording… press Enter to stop.[/]")
+    try:
+        audio = record_until_enter()
+    except Exception as exc:
+        console.print(f"[yellow]Couldn't access the microphone: {exc}[/]")
+        return None
+    if not audio:
+        console.print("[dim]No audio captured.[/]")
+        return None
+
+    with console.status("[dim]Transcribing…[/]", spinner="dots"):
+        try:
+            return stt.transcribe(audio, "audio.wav")
+        except Exception as exc:
+            console.print(f"[yellow]Transcription failed: {exc}[/]")
+            return None
+
+
 def chat(resume=False):
     if resume and list_sessions():
         session_id = list_sessions()[0][0]
@@ -161,7 +191,8 @@ def chat(resume=False):
         _gradient_logo(OAJAN_LOGO),
         Text(
             f"{MODEL}  ·  {len(tools.schemas())} tools  ·  "
-            f"{len(list_skills())} skills  ·  Ctrl+C to stop  ·  type 'exit' to leave",
+            f"{len(list_skills())} skills  ·  /voice to speak  ·  Ctrl+C to stop  ·  "
+            f"type 'exit' to leave",
             style="dim",
         ),
     )
@@ -184,6 +215,12 @@ def chat(resume=False):
             save_session(session_id, messages)
             console.print("[dim]Session saved. Goodbye.[/]")
             break
+        if user_input.lower() in {"/voice", "/v"}:
+            spoken = _capture_voice()
+            if not spoken:
+                continue
+            console.print(f"[dim]🎙️  heard:[/] {spoken}")
+            user_input = spoken
         if not user_input:
             continue
         console.rule(style="grey37")
