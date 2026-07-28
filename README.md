@@ -39,6 +39,8 @@ LangChain or LlamaIndex.
   restart).
 - **A self-hosting skill system** — the agent writes reusable procedures for its
   future self by following a procedure it can read.
+- **A messaging gateway** — chat with the agent from the Telegram app on your
+  phone, gated by an authorization allowlist since it can trigger real actions.
 - **Observability** — a single trace seam that drives both a `--verbose` mode and
   **LangFuse**: every turn is one trace, with the LLM generation and each tool call
   as nested spans (tokens, cost, latency), grouped by conversation session.
@@ -52,8 +54,8 @@ LangChain or LlamaIndex.
         User
           │
           ▼
-   ┌──────────────┐      CLI: chat REPL, --resume, --verbose, one-shot, Ctrl+C stop
-   │  Interface   │
+   ┌──────────────┐      CLI (chat REPL · --resume · --verbose · one-shot · Ctrl+C)
+   │  Interface   │      Telegram gateway (--telegram)
    └──────┬───────┘
           ▼
 ┌───────────────────────────────────────────────┐
@@ -144,6 +146,26 @@ LLM generation and every tool call as nested spans — model, token counts, cost
 latency included — and all turns of a conversation are grouped by `session_id`.
 With no keys set it is a zero-cost no-op, so the agent runs the same either way.
 
+## Messaging gateway (Telegram)
+
+The same `run_turn` core is reachable from Telegram, so you can operate the agent
+from your phone. The gateway is built raw on the Telegram Bot API with long-polling
+(`requests`, no bot framework): for each message it looks up that chat's
+conversation, runs a turn, and sends the reply back. Each chat maps to a stable
+session (`telegram-<chat_id>`), so conversations persist across restarts and reuse
+the same long-term memory and LangFuse tracing as the CLI. Long replies are split
+under Telegram's length cap, a typing indicator shows while a turn runs, and
+`/reset` clears a conversation.
+
+Because a messaged agent can trigger side-effecting tools (send email, create
+events), authorization is enforced up front: only user IDs in
+`TELEGRAM_ALLOWED_IDS` get a real reply. An unknown sender is told its own ID so it
+can be allowlisted — nothing runs until you opt yourself in.
+
+```bash
+python main.py --telegram
+```
+
 ## Tech stack
 
 - **Language:** Python, raw (no agent framework for the core)
@@ -154,6 +176,7 @@ With no keys set it is a zero-cost no-op, so the agent runs the same either way.
 - **Tools:** plain Python functions; Tavily for search; `osascript` for macOS;
   Composio over MCP for 1000+ external apps
 - **CLI:** `rich` for the terminal UI
+- **Messaging:** Telegram Bot API (raw long-polling via `requests`)
 - **Observability:** structured trace seam → LangFuse
 
 ## Setup
@@ -177,11 +200,15 @@ COMPOSIO_API_KEY=...            # optional — external apps over MCP
 LANGFUSE_PUBLIC_KEY=...         # optional — tracing
 LANGFUSE_SECRET_KEY=...
 LANGFUSE_HOST=https://cloud.langfuse.com
+TELEGRAM_BOT_TOKEN=...          # optional — Telegram gateway (from @BotFather)
+TELEGRAM_ALLOWED_IDS=...        # comma-separated Telegram user IDs allowed to use it
 ```
 
 The chat model is the one seam that changes providers: swap these two lines and the
-`base_url` in `agent/llm.py`. Composio and LangFuse are both optional — leave their
-keys blank and those features simply switch off.
+`base_url` in `agent/llm.py`. Composio, LangFuse, and Telegram are all optional —
+leave their keys blank and those features simply switch off. For Telegram, get a
+token from [@BotFather](https://t.me/BotFather), run `python main.py --telegram`,
+message the bot once to learn your user ID, and add it to `TELEGRAM_ALLOWED_IDS`.
 
 Long-term memory needs a Supabase table + recall function:
 
@@ -222,6 +249,7 @@ $$;
 python main.py                     # interactive chat (Ctrl+C stops a running turn)
 python main.py --resume            # resume the most recent conversation
 python main.py --verbose           # show the full reasoning trace
+python main.py --telegram          # run the Telegram gateway (chat from your phone)
 python main.py "what is 47 * 89"   # one-shot
 python evals/run_evals.py          # run the eval suite
 ```
@@ -243,6 +271,8 @@ agent/
     embeddings.py            Gemini embeddings
     store.py                 vector memory (save / recall)
     session_store.py         conversation persistence
+  gateway/
+    telegram.py              Telegram messaging gateway
 skills/
   create-skill/SKILL.md      the bootstrap meta-skill
 evals/
