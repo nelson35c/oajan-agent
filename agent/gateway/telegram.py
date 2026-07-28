@@ -64,7 +64,12 @@ def _download_file(file_id):
     data = requests.get(
         f"https://api.telegram.org/file/bot{_TOKEN}/{path}", timeout=60
     ).content
-    return data, path.split("/")[-1] or "audio.oga"
+    filename = path.split("/")[-1] or "audio.ogg"
+    # Telegram voice notes are Ogg Opus but land named .oga, which Groq's STT
+    # rejects by extension; .ogg names the same container and is accepted.
+    if filename.endswith(".oga"):
+        filename = filename[:-4] + ".ogg"
+    return data, filename
 
 
 def _chunks(text):
