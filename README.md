@@ -39,6 +39,8 @@ LangChain or LlamaIndex.
   restart).
 - **A self-hosting skill system** — the agent writes reusable procedures for its
   future self by following a procedure it can read.
+- **Multiple personas** — swappable agents, each a file with its own identity and
+  its own long-term memory; pick one at launch or switch mid-conversation.
 - **A messaging gateway** — chat with the agent from the Telegram app on your
   phone, gated by an authorization allowlist since it can trigger real actions.
 - **Voice input** — speak instead of type: send a Telegram voice note or use
@@ -106,6 +108,22 @@ hand-written bootstrap skill, `create-skill`, holds the authoring standards, so
 when asked to learn a new procedure the agent reads `create-skill`, then calls
 the `save_skill` tool to author the new one. Every skill's description is injected
 into the system prompt as an index, so the agent knows what it can do.
+
+## Agent personas
+
+An agent is a folder `agents/<name>/AGENT.md` — frontmatter (name, description)
+plus a body that *is* the agent's **soul**: the identity and behavior half of its
+system prompt. The system prompt is split in two — the soul (per agent) and the
+shared **operating rules** (tool mechanics, same for everyone) — so a persona file
+only describes *who* it is, and the harness appends the how. Add a new persona by
+dropping in a folder; no code changes.
+
+Each agent also names a **memory namespace**, so personas keep separate long-term
+memory and saved threads while sharing the same tools, skills, and loop. The repo
+ships three: `oajan` (general, default), `scout` (web-first research), and
+`scribe` (writing and notes). Pick one at launch with `--agent scout`, or switch
+mid-conversation with `/agent <name>` (and `/agents` to list) — in both the CLI
+and Telegram, where each chat tracks its own active persona.
 
 ## Tools
 
@@ -255,10 +273,11 @@ $$;
 
 ```bash
 python main.py                     # interactive chat (Ctrl+C stops a running turn)
+python main.py --agent scout       # launch a specific persona (oajan · scout · scribe)
 python main.py --resume            # resume the most recent conversation
 python main.py --verbose           # show the full reasoning trace
 python main.py --telegram          # run the Telegram gateway (chat from your phone)
-# in the REPL, type /voice to speak a turn instead of typing it
+# in the REPL: /voice to speak a turn · /agents to list personas · /agent <name> to switch
 python main.py "what is 47 * 89"   # one-shot
 python evals/run_evals.py          # run the eval suite
 ```
@@ -274,6 +293,7 @@ agent/
   voice_input.py             CLI microphone capture
   mcp_client.py              Composio MCP meta-router (1000+ apps)
   trace.py                   observability seam (--verbose · LangFuse)
+  agents.py                  persona loader (agents/<name>/AGENT.md)
   skills.py                  skill discovery / authoring
   tools/                     self-registering tool modules
     __init__.py              the @tool registry
@@ -284,6 +304,8 @@ agent/
     session_store.py         conversation persistence
   gateway/
     telegram.py              Telegram messaging gateway
+agents/
+  oajan · scout · scribe     personas (AGENT.md per agent)
 skills/
   create-skill/SKILL.md      the bootstrap meta-skill
 evals/
