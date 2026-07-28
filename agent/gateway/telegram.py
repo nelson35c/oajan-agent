@@ -20,6 +20,7 @@ import time
 import requests
 from dotenv import load_dotenv
 
+from agent import stt
 from agent.loop import run_turn, SYSTEM_PROMPT
 from agent.memory.session_store import save_session, load_session
 from agent.memory.store import save_memory, recall_memories
@@ -53,6 +54,17 @@ def _get_updates(offset, timeout=30):
     )
     r.raise_for_status()
     return r.json().get("result", [])
+
+
+def _download_file(file_id):
+    """Resolve a Telegram file_id to (bytes, filename) via getFile + download."""
+    r = requests.get(f"{_API}/getFile", params={"file_id": file_id}, timeout=30)
+    r.raise_for_status()
+    path = r.json()["result"]["file_path"]
+    data = requests.get(
+        f"https://api.telegram.org/file/bot{_TOKEN}/{path}", timeout=60
+    ).content
+    return data, path.split("/")[-1] or "audio.oga"
 
 
 def _chunks(text):
@@ -109,19 +121,48 @@ def _conversation(chat_id):
 
 # ----- message handling --------------------------------------------------
 
+def _resolve_text(chat_id, msg):
+    """Return the user's text: the typed message, or a transcribed voice note.
+    Returns None for unsupported messages (and reports voice/config problems)."""
+    if "text" in msg:
+        return msg["text"]
+
+    media = msg.get("voice") or msg.get("audio")
+    if not media:
+        return None
+    if not stt.available():
+        _send(chat_id, "Voice isn't configured — set GROQ_API_KEY to enable "
+                       "transcription.")
+        return None
+    try:
+        audio_bytes, filename = _download_file(media["file_id"])
+        transcript = stt.transcribe(audio_bytes, filename)
+    except Exception as exc:
+        _send(chat_id, f"Couldn't transcribe that: {exc}")
+        return None
+    if not transcript:
+        _send(chat_id, "I couldn't make out any speech in that.")
+        return None
+    _send(chat_id, f"🎙️ heard: {transcript}")
+    return transcript
+
+
 def _handle(update):
     msg = update.get("message")
-    if not msg or "text" not in msg:
+    if not msg:
         return
     chat_id = msg["chat"]["id"]
     user_id = msg["from"]["id"]
-    text = msg["text"]
-    print(f"[telegram] {user_id} → {text!r}")
 
     if user_id not in _allowed_ids():
         _send(chat_id, f"Not authorized. Your Telegram ID is {user_id} — add it to "
                        f"TELEGRAM_ALLOWED_IDS in .env to enable Oajan.")
         return
+
+    text = _resolve_text(chat_id, msg)
+    if text is None:
+        return
+    print(f"[telegram] {user_id} → {text!r}")
 
     command = text.strip().lower()
     if command == "/start":
