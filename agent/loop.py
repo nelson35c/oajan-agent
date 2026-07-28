@@ -186,7 +186,8 @@ def _capture_voice():
             return None
 
 
-def chat(resume=False, agent=None):
+def _activate_agent(agent, resume=False):
+    """Resolve an agent and set up its thread. Returns (name, session_id, messages)."""
     from agent.agents import load_agent, DEFAULT_AGENT
 
     active = load_agent(agent)
@@ -208,6 +209,13 @@ def chat(resume=False, agent=None):
         prior = []
 
     messages = [{"role": "system", "content": system_prompt}] + prior
+    return name, session_id, messages
+
+
+def chat(resume=False, agent=None):
+    from agent.agents import list_agents
+
+    name, session_id, messages = _activate_agent(agent, resume=resume)
 
     banner = Group(
         _gradient_logo(OAJAN_LOGO),
@@ -233,11 +241,29 @@ def chat(resume=False, agent=None):
             save_session(session_id, messages)
             console.print("\n[dim]Session saved. Goodbye.[/]")
             break
-        if user_input.lower() in {"exit", "quit"}:
+        low = user_input.lower()
+        if low in {"exit", "quit"}:
             save_session(session_id, messages)
             console.print("[dim]Session saved. Goodbye.[/]")
             break
-        if user_input.lower() in {"/voice", "/v"}:
+        if low == "/agents":
+            for n, desc in list_agents():
+                mark = "[cyan]→[/]" if n == name else " "
+                console.print(f"{mark} [bold]{n}[/] — {desc}")
+            continue
+        if low == "/agent" or low.startswith("/agent "):
+            from agent.agents import load_agent
+            target = user_input.split(maxsplit=1)[1].strip() if " " in user_input else ""
+            if not target:
+                console.print(f"[dim]Current agent: [cyan]{name}[/]. Usage: /agent <name>[/]")
+            elif load_agent(target) is None:
+                console.print(f"[yellow]No agent '{target}'. Try /agents.[/]")
+            else:
+                save_session(session_id, messages)
+                name, session_id, messages = _activate_agent(target)
+                console.print(f"[dim]Switched to [cyan]{name}[/].[/]")
+            continue
+        if low in {"/voice", "/v"}:
             spoken = _capture_voice()
             if not spoken:
                 continue

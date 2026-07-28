@@ -21,7 +21,8 @@ import requests
 from dotenv import load_dotenv
 
 from agent import stt
-from agent.loop import run_turn, SYSTEM_PROMPT
+from agent.agents import DEFAULT_AGENT, list_agents, load_agent
+from agent.loop import run_turn, _build_system_prompt
 from agent.memory.session_store import save_session, load_session
 from agent.memory.store import save_memory, recall_memories
 
@@ -33,6 +34,8 @@ _MAX_LEN = 4096  # Telegram's per-message character limit
 
 # Per-chat conversation state, kept in RAM and mirrored to sessions/*.json.
 _conversations = {}
+# Per-chat active persona (chat_id -> agent name); switch with /agent.
+_agents = {}
 
 
 def _allowed_ids():
@@ -40,8 +43,19 @@ def _allowed_ids():
     return {int(x) for x in raw.replace(" ", "").split(",") if x}
 
 
+def _agent_name(chat_id):
+    return _agents.get(chat_id, DEFAULT_AGENT)
+
+
 def _session_id(chat_id):
-    return f"telegram-{chat_id}"
+    # Thread is namespaced by both persona and chat, so switching persona starts
+    # a fresh conversation while each agent keeps its own memory.
+    return f"telegram-{_agent_name(chat_id)}-{chat_id}"
+
+
+def _system_prompt(chat_id):
+    active = load_agent(_agent_name(chat_id))
+    return _build_system_prompt(active.soul if active else None)
 
 
 # ----- Telegram Bot API --------------------------------------------------
@@ -119,7 +133,7 @@ def _conversation(chat_id):
     messages = _conversations.get(chat_id)
     if messages is None:
         prior = load_session(_session_id(chat_id)) or []
-        messages = [{"role": "system", "content": SYSTEM_PROMPT}] + prior
+        messages = [{"role": "system", "content": _system_prompt(chat_id)}] + prior
         _conversations[chat_id] = messages
     return messages
 
@@ -171,18 +185,37 @@ def _handle(update):
 
     command = text.strip().lower()
     if command == "/start":
-        _send(chat_id, "Oajan here. Ask me anything.")
+        _send(chat_id, f"Oajan here (agent: {_agent_name(chat_id)}). Ask me anything, "
+                       f"or /agents to switch persona.")
         return
     if command == "/reset":
         _conversations.pop(chat_id, None)
-        save_session(_session_id(chat_id), [{"role": "system", "content": SYSTEM_PROMPT}])
+        save_session(_session_id(chat_id), [{"role": "system", "content": _system_prompt(chat_id)}])
         _send(chat_id, "Conversation reset.")
         return
+    if command == "/agents":
+        current = _agent_name(chat_id)
+        lines = [("→ " if n == current else "• ") + f"{n} — {d}" for n, d in list_agents()]
+        _send(chat_id, "Agents (switch with /agent <name>):\n" + "\n".join(lines))
+        return
+    if command == "/agent" or command.startswith("/agent "):
+        target = text.split(maxsplit=1)[1].strip() if " " in text else ""
+        if not target:
+            _send(chat_id, f"Current agent: {_agent_name(chat_id)}. Usage: /agent <name>")
+        elif load_agent(target) is None:
+            _send(chat_id, f"No agent '{target}'. Send /agents to list.")
+        else:
+            save_session(_session_id(chat_id), _conversation(chat_id))
+            _agents[chat_id] = target
+            _conversations.pop(chat_id, None)  # new persona -> fresh conversation
+            _send(chat_id, f"Switched to {target}.")
+        return
 
+    name = _agent_name(chat_id)
     sid = _session_id(chat_id)
     messages = _conversation(chat_id)
 
-    memories = recall_memories(text)
+    memories = recall_memories(text, session_id=name)
     if memories:
         block = "Relevant memories from past conversations:\n" + "\n".join(
             f"- {m['content']}" for m in memories
@@ -200,7 +233,7 @@ def _handle(update):
         stop.set()
 
     _send(chat_id, answer)
-    save_memory(sid, f"User: {text}\nAssistant: {answer}")
+    save_memory(name, f"User: {text}\nAssistant: {answer}")
     save_session(sid, messages)
 
 
