@@ -41,6 +41,8 @@ LangChain or LlamaIndex.
   future self by following a procedure it can read.
 - **A messaging gateway** — chat with the agent from the Telegram app on your
   phone, gated by an authorization allowlist since it can trigger real actions.
+- **Voice input** — speak instead of type: send a Telegram voice note or use
+  `/voice` in the CLI, and speech is transcribed (Groq Whisper) into a normal turn.
 - **Observability** — a single trace seam that drives both a `--verbose` mode and
   **LangFuse**: every turn is one trace, with the LLM generation and each tool call
   as nested spans (tokens, cost, latency), grouped by conversation session.
@@ -155,7 +157,9 @@ conversation, runs a turn, and sends the reply back. Each chat maps to a stable
 session (`telegram-<chat_id>`), so conversations persist across restarts and reuse
 the same long-term memory and LangFuse tracing as the CLI. Long replies are split
 under Telegram's length cap, a typing indicator shows while a turn runs, and
-`/reset` clears a conversation.
+`/reset` clears a conversation. Send a **voice note** and it is transcribed
+(`agent/stt.py`, Groq Whisper) and echoed back before running, so you can operate
+the agent hands-free from your phone. The CLI has the same via `/voice`.
 
 Because a messaged agent can trigger side-effecting tools (send email, create
 events), authorization is enforced up front: only user IDs in
@@ -177,6 +181,8 @@ python main.py --telegram
   Composio over MCP for 1000+ external apps
 - **CLI:** `rich` for the terminal UI
 - **Messaging:** Telegram Bot API (raw long-polling via `requests`)
+- **Voice:** Groq Whisper (`whisper-large-v3`) for speech-to-text; `sounddevice`
+  for CLI mic capture
 - **Observability:** structured trace seam → LangFuse
 
 ## Setup
@@ -202,6 +208,8 @@ LANGFUSE_SECRET_KEY=...
 LANGFUSE_HOST=https://cloud.langfuse.com
 TELEGRAM_BOT_TOKEN=...          # optional — Telegram gateway (from @BotFather)
 TELEGRAM_ALLOWED_IDS=...        # comma-separated Telegram user IDs allowed to use it
+GROQ_API_KEY=...                # optional — voice input (Groq Whisper)
+GROQ_STT_MODEL=whisper-large-v3
 ```
 
 The chat model is the one seam that changes providers: swap these two lines and the
@@ -250,6 +258,7 @@ python main.py                     # interactive chat (Ctrl+C stops a running tu
 python main.py --resume            # resume the most recent conversation
 python main.py --verbose           # show the full reasoning trace
 python main.py --telegram          # run the Telegram gateway (chat from your phone)
+# in the REPL, type /voice to speak a turn instead of typing it
 python main.py "what is 47 * 89"   # one-shot
 python evals/run_evals.py          # run the eval suite
 ```
@@ -261,6 +270,8 @@ main.py                      CLI entry point
 agent/
   loop.py                    the agent loop + chat REPL
   llm.py                     LLM client (the provider seam)
+  stt.py                     speech-to-text seam (Groq Whisper)
+  voice_input.py             CLI microphone capture
   mcp_client.py              Composio MCP meta-router (1000+ apps)
   trace.py                   observability seam (--verbose · LangFuse)
   skills.py                  skill discovery / authoring
